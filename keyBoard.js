@@ -1,177 +1,136 @@
 /**
- * 键盘热键管理类
+ * 键盘热键管理器
  * @author 周梽烽
- * @version 1.0.0
- * @date 2023/6/12
+ * @version 1.1.0
+ * @date 2023/6/13
+ * @change 更新内容：在不改变代码逻辑的情况下对代码结构优化，去除了冗余的代码
  */
-class Keyboard {
-    static KEYBOARD_EVENT_TYPE = {
+class KeyboardManager {
+    static EVENT_TYPE = {
         DOWN: 'keydown',
         UP: 'keyup'
     }
+    static DEFAULT_OPTIONS = {
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        metaKey: false
+    }
 
-    #elEventSource
+    #elSource
     #isListened
     #hotKeyMap
     #delay
-    #hasOrder // 规定热键组合是否有顺序要求
+    #rule
 
-    constructor(elEventSource, delay = 500, hasOrder = false) {
-        if (!this._isSupportEl(elEventSource)) {
-            throw new Error('参数一: elEventSource 元素类型不支持')
-        }
-        if (typeof delay != 'number' || delay <= 0) {
-            throw new Error('参数二: delay 类型必须为number且大于0')
-        }
-        if (typeof hasOrder != 'boolean') {
-            throw new Error('参数三: hasOrder 类型必须为boolean')
-        }
-        this.#elEventSource = elEventSource
-        this.#isListened = this._isListened()
-        this.#hotKeyMap = this._hotKeyMap()
+    constructor(elSource, delay = 500, rule = null) {
+        isSupportElOrThrow(elSource)
+        isNumberOrThrow(delay) && isGtNumOrThrow(delay, 0)
+        this.#elSource = elSource
         this.#delay = delay
-        this.#hasOrder = hasOrder
+        this.#rule = KeyboardManager._fillRule(rule)
+        this.#isListened = KeyboardManager._isListened
+        this.#hotKeyMap = KeyboardManager._hotKeyMap
     }
 
-    /**
-     * 获取默认参数
-     * @returns 事件监听记录对象
-     */
-    _isListened() {
-        const isListened = {}
-        const eventType = Keyboard.KEYBOARD_EVENT_TYPE
-        for (let key in eventType) {
-            isListened[eventType[key]] = false
-        }
-        return isListened
-    }
+    addHotKey(type, cb, combo, opt, isCap=false) {
+        // 参数判断
 
-    /**
-     * 获取默认参数
-     * @returns 键盘热键映射对象
-     */
-    _hotKeyMap() {
-        const hotKeyMap = {}
-        const eventType = Keyboard.KEYBOARD_EVENT_TYPE
-        for (let key in eventType) {
-            hotKeyMap[eventType[key]] = new Map()
-        }
-        return hotKeyMap
-    }
-
-    /**
-     * 热键选项
-     * @typedef HotkeyOptions
-     * @property {Boolean} ctrlKey
-     * @property {Boolean} altKey
-     * @property {Boolean} shiftKey
-     * @property {Boolean} metaKey
-     */
-    /**
-     * 添加热键
-     * @param {String} type 键盘事件类型
-     * @param {Function} cb 热键触发后的回调函数
-     * @param {String} combination 设置组合键，不同键名用空格隔开；需要使用空格作为键名时，用space代替；示例：'s space'
-     * @param {HotkeyOptions} options 热键选项
-     * @param {Boolean} isCapture 事件是否捕获
-     */
-    addHotKey(type, cb, combination, options, isCapture=false) {
-        // 参数判断：type是否支持、cb是否为空、triggerCondition类型
-        if (!Object.values(Keyboard.KEYBOARD_EVENT_TYPE).includes(type)) {
-            throw new Error('参数一: type为不支持的事件类型,请参考Keyboard.KEYBOARD_EVENT_TYPE参量')
-        }
-        if (!cb || !combination) {
-            throw new Error('参数二或三: cb, combination不能为空')
-        }
-        if (typeof isCapture != 'boolean') {
-            throw new Error('参数五: isCapture只能为boolean了类型')
-        }
-        // 处理参数
-        let triggerCondition = new TriggerCondition(combination, options, this.#hasOrder)
-        
         // 添加到热键对象中
-        this.#hotKeyMap[type].set(triggerCondition.toKey(), { triggerCondition, cb })
-        
+        this.#hotKeyMap[type].set(this.genHKMapKey(combo, opt), cb)
+
         // 判断是否开启监听
         if (this.#isListened[type]) return
         
         // 调用创建监听的方法
-        this.addListener(type, isCapture)
+        this.addListener(type, isCap)
 
         this.#isListened[type] = true
     }
 
-    /**
-     * 添加事件监听
-     * @param {String} type 键盘事件类型
-     * @param {Boolean} isCapture 事件是否捕获
-     */
-    addListener(type, isCapture) {
-        const keyCombination = new KeyCombination(this.#delay)
-        
-        this.#elEventSource.addEventListener(type, e => {
+    addListener(type, isCap) {
+        const keyCombo = new KeyCombo(this.#delay)
+
+        this.#elSource.addEventListener(type, e => {
             e.preventDefault()
-            const { key } = e
+
             // 输入key
-            keyCombination.input(key)
+            keyCombo.input(e.key)
 
-            // 获取热键对象
-            const keyStr = keyCombination.getKeyStr()
-            if (keyStr.length < 1) return
-            const hotKey = this.#hotKeyMap[type].get(TriggerCondition.generateKey(keyStr, e, this.#hasOrder))
-            // 若没有对应的热键对象则结束
-            if (!hotKey) return
+            
+            // 获取热键函数
+            const combo = keyCombo.combo
+            if(combo.length < 1) return
+            const cb = this.#hotKeyMap[type].get(this.genHKMapKey(combo, e))
 
-            // // 判断是否符合组合键条件
-            // if (!KeyCombination.isEligible(e, hotKey.triggerCondition)) return
+            if (!cb) return
+            
+            // 调用回调
+            cb.call(this.#elSource, e)
 
-            // 符合条件后回调
-            hotKey.cb && hotKey.cb.call(this.#elEventSource, e)
+            // 清空输入的按键
+            keyCombo.clear()
 
-            // 清空记录的组合键
-            keyCombination.clear()
-        }, isCapture)
+        }, isCap)
+    }
+    
+    down(combo, cb, opt, isCap) {
+        this.addHotKey(KeyboardManager.EVENT_TYPE.DOWN, cb, combo, opt, isCap)
     }
 
-    //========================================================================
-    //      addHotKey方法简洁调用 ⬇⬇⬇⬇
-    //========================================================================
-
-    /**
-     * 注册键盘松开的热键
-     * @param {Function} cb 回调函数
-     * @param {TriggerCondition} triggerCondition 触发条件
-     * @param {Boolean} isCapture 事件是否捕获
-     */
-    up(combination, options, cb, isCapture) {
-        this.addHotKey(Keyboard.KEYBOARD_EVENT_TYPE.UP, cb, combination, options, isCapture)
+    up(combo, cb, opt, isCap) {
+        this.addHotKey(KeyboardManager.EVENT_TYPE.UP, cb, combo, opt, isCap)
     }
 
-    /**
-     * 注册键盘按下的热键
-     * @param {Function} cb 回调函数
-     * @param {TriggerCondition} triggerCondition 触发条件
-     * @param {Boolean} isCapture 事件是否捕获
-     */
-    down(combination, options, cb, isCapture) {
-        this.addHotKey(Keyboard.KEYBOARD_EVENT_TYPE.DOWN, cb, combination, options, isCapture)
+    static get _rule() {
+        return {
+            ordered: false, // 为true时表示当前组合键触发是有顺序的
+            repeatable: false // 为true时表示当前组合键可重复
+        }
     }
 
-    /**
-     * 获取元素支持注册事件的情况
-     * @param {Object} el 对象
-     * @returns 布尔值，true表示支持，否则反之
-     */
-    _isSupportEl(el) {
-        return el instanceof EventTarget
+    static get _isListened() {
+        const isListened = {}
+        const eventType = Object.values(KeyboardManager.EVENT_TYPE)
+        for (let type of eventType) {
+            isListened[type] = false
+        }
+        return isListened
     }
+
+    static get _hotKeyMap() {
+        const hotKeyMap = {}
+        const eventType = Object.values(KeyboardManager.EVENT_TYPE)
+        for (let type of eventType) {
+            hotKeyMap[type] = new Map()
+        }
+        return hotKeyMap
+    }
+
+    static _fillRule(obj) {
+        const rule = KeyboardManager._rule
+        if (!obj) return rule
+        else return toBoolPropOrFill(obj, rule)
+    }
+
+    static _fillOptions(obj) {
+        const opt = KeyboardManager.DEFAULT_OPTIONS
+        if (!obj) return Object.assign({}, opt)
+        else return toBoolPropOrFill(obj, opt)
+    }
+
+    genHKMapKey(combo, opt) {
+        opt = KeyboardManager._fillOptions(opt)
+        const keys = Object.keys(KeyboardManager.DEFAULT_OPTIONS)
+        let optStr = ''
+        for(let k of keys) { optStr += opt[k] }
+        return KeyCombo.handleCombo(combo, this.#rule) + '=>' + optStr
+    }
+    
 }
 
-/**
- * 键盘组合键处理对象
- */
-class KeyCombination {
-    /** 忽视的组合键（不在组合键字符串中显示的字符） */
+class KeyCombo {
+    /** 忽视的key（不在组合键字符串和keys中显示的字符） */
     static IGNORE_KEYS = ['control', 'alt', 'shift', 'meta', 'escape']
     /** 一个数组，记录键盘输入的key */
     #keys
@@ -179,6 +138,7 @@ class KeyCombination {
     #timer
     /** 延时器延迟时间 */
     #delay
+
     constructor(delay) {
         this.#keys = []
         this.#timer = null
@@ -190,7 +150,7 @@ class KeyCombination {
      * @param {String} key 
      */
     input(key) {
-        let k = KeyCombination._handleKey(key)
+        let k = KeyCombo.handleKey(key)
         if (k !== null) {
             this.#keys.push(k)
             // 有效字符输入时才重置延时器
@@ -206,92 +166,77 @@ class KeyCombination {
         this.#keys.length = 0
     }
 
-    /** 处理传入的字符，将其转化为需要的形式 */
-    static _handleKey(key) {
-        if (!key) return null
-        key = key.toLowerCase()
-        if (key === ' ') return 'space'
-        if (KeyCombination.IGNORE_KEYS.find(k=>k===key) != null) return null
-        return key
-    }
-
-    /** 获取字符数组拼接空格后的字符串 */
-    getKeyStr() {
+    get combo() {
         return this.#keys.join(' ')
     }
 
-    /**
-     * @discard 废弃的方法
-     * 判断是该事件的key否符合条件
-     * @param {KeyboardEvent} event 
-     * @param {TriggerCondition} triggerCondition 
-     */
-    static isEligible(event, triggerCondition) {
-        const { options: activeKey } = triggerCondition
-        for (let keyName in activeKey) {
-            if (activeKey[keyName] !== event[keyName]) return false
+    static handleCombo(combo, rule) {
+        if (!combo) {
+            throw new Error('组合键combo不能为空')
         }
-        return true
+        let combos = combo.trim().split(' ')
+        const { repeatable, ordered } = rule
+        if (!repeatable) {
+            let arr = []
+            combos.filter(k => {
+                k = KeyCombo.handleKey(k)
+                if (!arr.includes(k)) {
+                    arr.push(k)
+                    return true
+                }
+                return false
+            })
+        }
+        if (ordered) {
+            combos.sort()
+        }
+        return combos.join(' ')
     }
 
-    /**
-     * 处理传入的组合键字符串
-     * @param {String} combination
-     * @param {Boolean} hasOrder 规定热键组合是否有顺序要求
-     * @returns 返回处理后的结果
-     */
-    static handleCombination(combination, hasOrder) {
-        if (!combination) {
-            throw new Error('组合键定义不能为空')
-        }
-        // 对combination做转换、去重和排序
-        let _arr = []
-        combination.trim().split(' ').forEach(k => {
-            k = KeyCombination._handleKey(k)
-            if(!_arr.includes(k)) _arr.push(k)
-        })
-        if (hasOrder) {
-            return _arr.join(' ')
-        }
-        return _arr.sort().join(' ')
+    static handleKey(key) {
+        if (!key) return null
+        key = key.toLowerCase()
+        if (key === ' ') return 'space'
+        if (KeyCombo.IGNORE_KEYS.find(k=>k===key) != null) return null
+        return key
     }
 }
+
 
 /**
- * 触发条件对象，用来生成 Keyboard 对象的hotKeyMap需要的key
+ * 参数类型检测和异常
  */
-class TriggerCondition {
-    static #DEFAULT_VALUES = {
-        ctrlKey: false,
-        altKey: false,
-        shiftKey: false,
-        metaKey: false
-    }
-    combination
-    options
-    
-    constructor(combination, options, hasOrder=false) {
-        this.combination = KeyCombination.handleCombination(combination, hasOrder)
-        if (!options) {
-            this.options = Object.assign({}, TriggerCondition.#DEFAULT_VALUES)
-        } else {
-            this.options = {}
-            for (let keyName in TriggerCondition.#DEFAULT_VALUES) {
-                this.options[keyName] = !!(options[keyName]) || TriggerCondition.#DEFAULT_VALUES[keyName]
-            }
-        }
-    }
 
-    toKey() {
-        return this.combination + '==>' + JSON.stringify(this.options)
-    }
-    static generateKey(combination, options, hasOrder = false) {
-        let _options = {}
-        for (let keyName in TriggerCondition.#DEFAULT_VALUES) {
-            _options[keyName] = !!(options[keyName]) || TriggerCondition.#DEFAULT_VALUES[keyName]
-        }
-        return KeyCombination.handleCombination(combination, hasOrder) + '==>' + JSON.stringify(_options)
+function isNumberOrThrow(v, msg = '参数类型必须为number') {
+    if (!(typeof v === 'number')) { throw new Error(msg) }
+    return true
+}
+
+function isGtNumOrThrow(num, gtNum, msg='') {
+    if (num <= gtNum) { throw new Error(`数值必须大于${gtNum}${msg}`) }
+    return true
+}
+
+class NotSupportElement extends TypeError {
+    name = 'NotSupportElement'
+    message = '不支持的元素类型'
+    constructor() {
+        super()
     }
 }
 
-export default Keyboard
+function isSupportElOrThrow(el) {
+    if (! (el instanceof EventTarget)) {
+        throw new NotSupportElement()
+    }
+    return true
+}
+
+function toBoolPropOrFill(target, source) {
+    let res = {}
+    for (const [key, value] of Object.entries(source)) {
+        if ((typeof target[key]) == 'undefined') res[key] = value
+        else res[key] = !!(target[key])
+    }
+    return res
+}
