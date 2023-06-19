@@ -1,6 +1,6 @@
 ## 概述 | Overview
 
-> 数据结构灵感来源：
+> 数据结构灵感来源：https://github.com/bytedo/keyboard
 
 这是一个JS语言实现的键盘快捷键注册代码，支持你使用简单的API去注册键盘组合键。
 
