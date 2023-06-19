@@ -1,9 +1,9 @@
 /**
  * 键盘热键管理器
  * @author 周梽烽
- * @version 1.2.0
- * @date 2023/6/14
- * @change 更新内容：在对外API不变的前提下，更换了内部的数据结构和代码逻辑；修复了键盘热键功能键要求只需要最后一个字符符合条件即通过的bug
+ * @version 1.3.0
+ * @date 2023/6/19
+ * @change 将热键回调的this指向了事件源对象；添加了all关键字来匹配任意字符；删除掉冗余的注释代码
  */
 class KeyboardManager {
     static EVENT_TYPE = {
@@ -80,26 +80,10 @@ class KeyboardManager {
                         hkItem.isActive = true
                     } else {
                         hkItem.isActive = false
-                        hkItem.cb && hkItem.cb.call(hkItem, e, hkItem)
+                        hkItem.cb && hkItem.cb.call(this.elSource, e, hkItem)
                     }
                 }
             }
-
-            /* const activeList = this.activeHKList
-            let hotKeys = null
-            if (activeList.length > 0) {
-                hotKeys = [...activeList]
-                this.activeHKList.length = 0
-            } else {
-                hotKeys = this.HKList
-            }
-
-            for (let hkItem of hotKeys) {
-                if (hkItem.check(key, e)) {
-                    if(hkItem.hasNext) this.activeHKList.push(hkItem.next)
-                    hkItem.cb && hkItem.cb.call(hkItem, e, hkItem)
-                }
-            } */
         })
     }
     
@@ -163,6 +147,7 @@ class HotKeyItem {
         metaKey: false
     }
     static IGNORE_KEYS = ['control', 'alt', 'shift', 'meta']
+    static SPECIAL_KEYS = ['all']
  
     key
     option
@@ -181,7 +166,7 @@ class HotKeyItem {
         return this.next != null
     }
     check(key, event) {
-        // const key = HotKeyItem.handleKey(event.key)
+        if(HotKeyItem.SPECIAL_KEYS.includes(this.key)) return true
         if (!key || key !== this.key) return false
         // 检查辅助键
         for (const [key, value] of Object.entries(this.option)) {
