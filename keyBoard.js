@@ -21,6 +21,7 @@ class KeyboardManager {
 
 
     constructor(elSource, delay = 500) {
+        console.log(1);
         // 参数检测
         isSupportElOrThrow(elSource)
         isNumberOrThrow(delay) && isGtNumOrThrow(delay, 0)
